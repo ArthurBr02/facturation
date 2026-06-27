@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #app {
+    height: 100%;
+  }
+  body {
+    @apply bg-zinc-50 text-zinc-900 antialiased;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Tabular figures for financial data */
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-thumb { @apply bg-zinc-200 rounded-md border-[3px] border-solid border-white; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-zinc-300; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  /* ── Form fields ── */
+  .field-label {
+    @apply block text-[12px] font-semibold text-zinc-600 mb-[5px];
+  }
+  .field-input {
+    @apply w-full h-[34px] px-[10px] border border-zinc-200 rounded text-[13.5px] bg-white text-zinc-900
+      focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-colors
+      disabled:bg-zinc-50 disabled:text-zinc-500 disabled:cursor-not-allowed;
+  }
+  .field-textarea {
+    @apply field-input h-auto py-2 resize-none;
+  }
+  .field-select {
+    @apply field-input cursor-pointer;
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    @apply inline-flex items-center gap-1.5 h-[33px] px-[13px] text-[13px] font-semibold rounded
+      cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-blue-600 text-white border border-blue-600 hover:bg-blue-700 hover:border-blue-700;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-zinc-700 border border-zinc-200 hover:bg-zinc-50;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-zinc-500 border border-transparent hover:text-zinc-900 hover:bg-zinc-100;
+  }
+  .btn-danger {
+    @apply btn bg-white text-error-fg border border-zinc-200 hover:bg-error-bg;
+  }
+  .btn-sm {
+    @apply h-[28px] px-[10px] text-[12px];
+  }
+  .btn-icon {
+    @apply w-[27px] h-[27px] px-0 flex items-center justify-center border-none bg-transparent
+      text-zinc-400 rounded hover:bg-zinc-100 hover:text-zinc-700 cursor-pointer transition-colors;
+  }
+
+  /* ── Table ── */
+  .t-head {
+    @apply sticky top-0 bg-zinc-50 z-10;
+  }
+  .t-th {
+    @apply text-left py-[9px] px-[14px] text-[11px] font-semibold uppercase tracking-[0.05em]
+      text-zinc-400 border-b border-zinc-200 whitespace-nowrap;
+  }
+  .t-th-right {
+    @apply t-th text-right;
+  }
+  .t-tr {
+    @apply border-b border-row hover:bg-zinc-50 transition-colors;
+  }
+  .t-td {
+    @apply px-[14px] h-[39px] text-[13px] text-zinc-600;
+  }
+  .t-td-right {
+    @apply t-td text-right;
+  }
+  .t-td-mono {
+    @apply t-td font-semibold text-zinc-700 tabular whitespace-nowrap;
+  }
+
+  /* ── Status dot badge (dot + colored text) ── */
+  .status-dot {
+    @apply w-[7px] h-[7px] rounded-full flex-shrink-0 inline-block;
+  }
+
+  /* ── Tag / pill ── */
+  .tag {
+    @apply inline-block text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-[7px] py-[2px] rounded-[3px];
+  }
+
+  /* ── Card (used in edit forms for sections) ── */
+  .card {
+    @apply bg-white border border-zinc-200 rounded;
+  }
+}
