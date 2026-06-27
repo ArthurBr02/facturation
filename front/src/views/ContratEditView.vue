@@ -1,8 +1,10 @@
 <script>
 import { contratsApi, clientsApi } from '@/api'
+import { openPdfTab } from '@/utils/pdf'
 import PageHeader from '@/components/PageHeader.vue'
 import BaseModal from '@/components/BaseModal.vue'
 import StatusDot from '@/components/StatusDot.vue'
+import KpiBar from '@/components/KpiBar.vue'
 
 const STATUT_META = {
   actif:    { label: 'Actif',    dot: '#16a34a', color: '#15803d' },
@@ -16,7 +18,7 @@ const TODAY = new Date().toISOString().slice(0, 10)
 
 export default {
   name: 'ContratEditView',
-  components: { PageHeader, BaseModal, StatusDot },
+  components: { PageHeader, BaseModal, StatusDot, KpiBar },
   props: { id: String },
 
   data() {
@@ -58,6 +60,10 @@ export default {
       genererError: null,
       // lifecycle modal
       showResilierConfirm: false,
+      // signed PDF upload modal
+      showUploadSigneModal: false,
+      uploadSigneFile: null,
+      uploadSigneError: '',
       statutMeta: STATUT_META,
       moisFr: MOIS_FR,
     }
@@ -86,6 +92,19 @@ export default {
       if (pct >= 80) return '#d97706'
       return '#16a34a'
     },
+    contratKpis() {
+      const c = this.contrat
+      if (!c) return []
+      const heures = Number(c.heuresIncluses) > 0
+        ? `${c.heuresMoisCourant.toFixed(1)} / ${c.heuresIncluses} h`
+        : `${c.heuresMoisCourant.toFixed(1)} h`
+      return [
+        { label: 'Mensualité', value: this.euro(c.montantMensuel) },
+        { label: `Heures — ${this.currentMonthLabel}`, value: heures, color: this.heuresProgressColor },
+        { label: 'Dépassement', value: c.depassementMoisCourant > 0 ? `+${c.depassementMoisCourant.toFixed(1)} h` : '—', color: c.depassementMoisCourant > 0 ? '#dc2626' : undefined },
+        { label: 'Factures générées', value: String(c.factures?.length || 0) },
+      ]
+    },
     genererMoisOptions() {
       return MOIS_FR.map((l, i) => ({ value: i + 1, label: l }))
     },
@@ -112,6 +131,7 @@ export default {
   async created() {
     await this.loadClients()
     if (!this.isNew) await this.loadContrat()
+    else if (this.$route.query.clientId) this.form.clientId = Number(this.$route.query.clientId)
   },
 
   mounted() {
@@ -164,8 +184,44 @@ export default {
       }
     },
 
-    openPdf() {
-      window.open(`/api/contrats/${this.id}/pdf`, '_blank')
+    // Open the contract PDF through the authenticated axios wrapper. A raw
+    // window.open() would not carry the Bearer token and gets a 401.
+    async openPdf() {
+      const showPdf = openPdfTab()
+      try {
+        const blob = await contratsApi.pdf(this.id)
+        showPdf(blob)
+      } catch {
+        this.error = 'Aperçu PDF indisponible'
+      }
+    },
+    openUploadSigneModal() { this.uploadSigneFile = null; this.uploadSigneError = ''; this.showUploadSigneModal = true },
+    closeUploadSigneModal() { this.showUploadSigneModal = false },
+    onUploadSigneFile(e) { this.uploadSigneFile = e.target.files[0] || null },
+    async submitUploadSigne() {
+      if (!this.uploadSigneFile) { this.uploadSigneError = 'Sélectionnez un fichier PDF.'; return }
+      this.uploadSigneError = ''
+      const reader = new FileReader()
+      reader.onload = async (ev) => {
+        const base64 = ev.target.result.split(',')[1]
+        try {
+          await contratsApi.uploadSigne(this.id, base64)
+          this.showUploadSigneModal = false
+          await this.loadContrat()
+        } catch (e) {
+          this.uploadSigneError = e.response?.data?.error || 'Upload impossible'
+        }
+      }
+      reader.readAsDataURL(this.uploadSigneFile)
+    },
+    async viewSignedPdf() {
+      const showPdf = openPdfTab()
+      try {
+        const blob = await contratsApi.pdfSigne(this.id)
+        showPdf(blob)
+      } catch {
+        this.error = 'PDF signé indisponible'
+      }
     },
 
     async changeStatut(action) {
@@ -254,25 +310,36 @@ export default {
 
 <template>
   <div class="flex flex-col h-full overflow-hidden">
-    <PageHeader :title="pageTitle" :subtitle="contrat ? `${statutMeta[contrat.statut]?.label} · Depuis le ${frDate(contrat.dateDebut)}` : ''">
-      <template #actions>
-        <template v-if="!isNew && contrat">
-          <button class="btn btn-secondary" @click="openPdf">
-            <i data-lucide="file-text" width="15" height="15"></i> PDF
-          </button>
-          <template v-if="contrat.statut === 'actif'">
-            <button class="btn btn-secondary" @click="changeStatut('suspendre')" :disabled="saving">Suspendre</button>
-            <button class="btn btn-secondary text-red-600" @click="showResilierConfirm = true" :disabled="saving">Résilier</button>
-          </template>
-          <template v-else-if="contrat.statut === 'suspendu'">
-            <button class="btn btn-primary" @click="changeStatut('reactiver')" :disabled="saving">Réactiver</button>
-            <button class="btn btn-secondary text-red-600" @click="showResilierConfirm = true" :disabled="saving">Résilier</button>
-          </template>
+    <PageHeader
+      :title="pageTitle"
+      :subtitle="contrat ? `Depuis le ${frDate(contrat.dateDebut)}` : ''"
+      :back="{ name: 'documents' }"
+    >
+      <template v-if="!isNew && contrat">
+        <StatusDot :dot="statutMeta[contrat.statut]?.dot" :color="statutMeta[contrat.statut]?.color" :label="statutMeta[contrat.statut]?.label" />
+        <button class="btn-secondary btn-sm" title="Aperçu PDF" @click="openPdf">
+          <i data-lucide="file-text" width="14" height="14"></i> PDF
+        </button>
+        <button v-if="contrat.hasSignedPdf" class="btn-secondary btn-sm text-green-700 border-green-300 hover:bg-green-50" title="Voir le document signé" @click="viewSignedPdf">
+          <i data-lucide="file-check" width="14" height="14"></i> Signé
+        </button>
+        <button class="btn-secondary btn-sm" :title="contrat.hasSignedPdf ? 'Remplacer le document signé' : 'Uploader le document signé'" :disabled="saving" @click="openUploadSigneModal">
+          <i data-lucide="upload" width="14" height="14"></i> {{ contrat.hasSignedPdf ? 'Remplacer signé' : 'Uploader signé' }}
+        </button>
+        <template v-if="contrat.statut === 'actif'">
+          <button class="btn-secondary btn-sm" :disabled="saving" @click="changeStatut('suspendre')">Suspendre</button>
+          <button class="btn-secondary btn-sm text-red-600 hover:bg-error-bg" :disabled="saving" @click="showResilierConfirm = true">Résilier</button>
+        </template>
+        <template v-else-if="contrat.statut === 'suspendu'">
+          <button class="btn-primary btn-sm" :disabled="saving" @click="changeStatut('reactiver')">Réactiver</button>
+          <button class="btn-secondary btn-sm text-red-600 hover:bg-error-bg" :disabled="saving" @click="showResilierConfirm = true">Résilier</button>
         </template>
       </template>
     </PageHeader>
 
-    <div v-if="error" class="mx-6 mt-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{{ error }}</div>
+    <KpiBar v-if="!isNew && contrat" :items="contratKpis" />
+
+    <div v-if="error" class="mx-6 mt-4 bg-error-bg text-error-fg text-[13px] px-4 py-2 rounded border border-red-200">{{ error }}</div>
 
     <div class="flex-1 overflow-y-auto p-6">
 
@@ -280,7 +347,7 @@ export default {
       <template v-if="isNew">
         <form @submit.prevent="save" class="max-w-2xl mx-auto space-y-6">
           <div class="card p-6 space-y-4">
-            <h3 class="text-sm font-semibold text-zinc-900">Informations générales</h3>
+            <h3 class="text-[13px] font-semibold text-zinc-900">Informations générales</h3>
             <div>
               <label class="field-label">Client *</label>
               <select v-model="form.clientId" class="field-input" required>
@@ -299,7 +366,7 @@ export default {
           </div>
 
           <div class="card p-6 space-y-4">
-            <h3 class="text-sm font-semibold text-zinc-900">Durée & conditions</h3>
+            <h3 class="text-[13px] font-semibold text-zinc-900">Durée & conditions</h3>
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label class="field-label">Date de début *</label>
@@ -326,7 +393,7 @@ export default {
           </div>
 
           <div class="card p-6 space-y-4">
-            <h3 class="text-sm font-semibold text-zinc-900">Conditions financières</h3>
+            <h3 class="text-[13px] font-semibold text-zinc-900">Conditions financières</h3>
             <div>
               <label class="field-label">Montant mensuel HT (€) *</label>
               <input v-model="form.montantMensuel" type="number" min="0" step="0.01" class="field-input" required />
@@ -351,7 +418,7 @@ export default {
           </div>
 
           <div class="card p-6 space-y-4">
-            <h3 class="text-sm font-semibold text-zinc-900">Périmètre (optionnel)</h3>
+            <h3 class="text-[13px] font-semibold text-zinc-900">Périmètre (optionnel)</h3>
             <div>
               <label class="field-label">Couvert par le contrat</label>
               <textarea v-model="form.perimetreCouvert" class="field-input" rows="4" placeholder="Corrections de bugs, petites évolutions, supervision serveur…"></textarea>
@@ -373,60 +440,24 @@ export default {
 
       <!-- EXISTING CONTRACT VIEW -->
       <template v-else-if="contrat">
-        <div class="max-w-5xl mx-auto space-y-6">
+        <div class="max-w-5xl mx-auto space-y-5">
 
-          <!-- Status + KPIs -->
-          <div class="grid grid-cols-4 gap-4">
-            <div class="card p-4">
-              <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-1">Statut</div>
-              <div class="flex items-center gap-2 mt-1">
-                <StatusDot :color="statutMeta[contrat.statut]?.dot" />
-                <span class="font-semibold text-sm" :style="{ color: statutMeta[contrat.statut]?.color }">
-                  {{ statutMeta[contrat.statut]?.label }}
-                </span>
-              </div>
-            </div>
-            <div class="card p-4">
-              <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-1">Mensualité</div>
-              <div class="text-xl font-bold text-zinc-900">{{ euro(contrat.montantMensuel) }}</div>
-            </div>
-            <div class="card p-4">
-              <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-1">Heures — {{ currentMonthLabel }}</div>
-              <div class="text-xl font-bold" :style="{ color: heuresProgressColor }">
-                {{ contrat.heuresMoisCourant.toFixed(1) }} h
-                <span v-if="Number(contrat.heuresIncluses) > 0" class="text-sm font-normal text-zinc-400">
-                  / {{ contrat.heuresIncluses }} h
-                </span>
-              </div>
-              <div v-if="Number(contrat.heuresIncluses) > 0" class="mt-2 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
-                <div class="h-full rounded-full transition-all" :style="{ width: heuresProgressPct + '%', background: heuresProgressColor }"></div>
-              </div>
-              <div v-if="contrat.depassementMoisCourant > 0" class="text-xs text-red-600 mt-1">
-                +{{ contrat.depassementMoisCourant.toFixed(1) }} h dépassement
-              </div>
-            </div>
-            <div class="card p-4">
-              <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-1">Factures</div>
-              <div class="text-xl font-bold text-zinc-900">{{ contrat.factures?.length || 0 }}</div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-6">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <!-- Contract details -->
             <div class="card p-5 space-y-3">
-              <h3 class="text-sm font-semibold text-zinc-700">Détails du contrat</h3>
-              <div class="space-y-2 text-sm">
+              <h3 class="text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.04em]">Détails du contrat</h3>
+              <div class="space-y-2 text-[13px]">
                 <div class="flex justify-between">
                   <span class="text-zinc-500">Client</span>
                   <span class="font-medium text-zinc-900">{{ contrat.client?.denomination || contrat.client?.nom }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-500">Date de début</span>
-                  <span class="font-mono text-zinc-700">{{ frDate(contrat.dateDebut) }}</span>
+                  <span class="font-mono text-zinc-700 tabular">{{ frDate(contrat.dateDebut) }}</span>
                 </div>
                 <div v-if="contrat.dureeMois" class="flex justify-between">
                   <span class="text-zinc-500">Durée</span>
-                  <span class="font-mono text-zinc-700">{{ contrat.dureeMois }} mois</span>
+                  <span class="font-mono text-zinc-700 tabular">{{ contrat.dureeMois }} mois</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-500">Reconduction</span>
@@ -440,18 +471,18 @@ export default {
                   <hr class="border-zinc-100">
                   <div class="flex justify-between">
                     <span class="text-zinc-500">Heures incluses</span>
-                    <span class="font-mono text-zinc-700">{{ contrat.heuresIncluses }} h/mois</span>
+                    <span class="font-mono text-zinc-700 tabular">{{ contrat.heuresIncluses }} h/mois</span>
                   </div>
                   <div v-if="Number(contrat.thmDepassement) > 0" class="flex justify-between">
                     <span class="text-zinc-500">THM dépassement</span>
-                    <span class="font-mono text-zinc-700">{{ euro(contrat.thmDepassement) }}/h</span>
+                    <span class="font-mono text-zinc-700 tabular">{{ euro(contrat.thmDepassement) }}/h</span>
                   </div>
                 </template>
                 <template v-if="contrat.dateResiliation">
                   <hr class="border-zinc-100">
                   <div class="flex justify-between">
                     <span class="text-zinc-500">Date de résiliation</span>
-                    <span class="font-mono text-red-600">{{ frDate(contrat.dateResiliation) }}</span>
+                    <span class="font-mono text-error-fg tabular">{{ frDate(contrat.dateResiliation) }}</span>
                   </div>
                 </template>
               </div>
@@ -459,50 +490,50 @@ export default {
               <template v-if="contrat.perimetreCouvert">
                 <hr class="border-zinc-100">
                 <div>
-                  <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">Périmètre couvert</div>
-                  <p class="text-sm text-zinc-600 whitespace-pre-wrap">{{ contrat.perimetreCouvert }}</p>
+                  <div class="text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.04em] mb-2">Périmètre couvert</div>
+                  <p class="text-[13px] text-zinc-600 whitespace-pre-wrap">{{ contrat.perimetreCouvert }}</p>
                 </div>
               </template>
               <template v-if="contrat.exclusions">
                 <hr class="border-zinc-100">
                 <div>
-                  <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">Exclusions</div>
-                  <p class="text-sm text-zinc-600 whitespace-pre-wrap">{{ contrat.exclusions }}</p>
+                  <div class="text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.04em] mb-2">Exclusions</div>
+                  <p class="text-[13px] text-zinc-600 whitespace-pre-wrap">{{ contrat.exclusions }}</p>
                 </div>
               </template>
             </div>
 
             <!-- Actions + Invoices -->
-            <div class="space-y-4">
+            <div class="space-y-5">
               <!-- Quick actions -->
               <div v-if="contrat.statut !== 'resilie'" class="card p-5">
-                <h3 class="text-sm font-semibold text-zinc-700 mb-3">Actions</h3>
+                <h3 class="text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.04em] mb-3">Actions</h3>
                 <div class="space-y-2">
-                  <button class="w-full btn btn-secondary justify-start gap-2" @click="openInterventionModal">
-                    <i data-lucide="clock" width="15" height="15"></i> Saisir une intervention
+                  <button class="w-full btn-secondary justify-start" @click="openInterventionModal">
+                    <i data-lucide="clock" width="14" height="14"></i> Saisir une intervention
                   </button>
-                  <button class="w-full btn btn-primary justify-start gap-2" @click="openGenererModal">
-                    <i data-lucide="file-plus" width="15" height="15"></i> Générer une facture mensuelle
+                  <button class="w-full btn-primary justify-start" @click="openGenererModal">
+                    <i data-lucide="file-plus" width="14" height="14"></i> Générer une facture mensuelle
                   </button>
                 </div>
               </div>
 
               <!-- Recent invoices -->
               <div class="card p-5">
-                <h3 class="text-sm font-semibold text-zinc-700 mb-3">Factures générées</h3>
-                <div v-if="!contrat.factures?.length" class="text-sm text-zinc-400 italic">Aucune facture</div>
-                <div v-else class="space-y-2">
+                <h3 class="text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.04em] mb-3">Factures générées</h3>
+                <div v-if="!contrat.factures?.length" class="text-[13px] text-zinc-400 italic">Aucune facture</div>
+                <div v-else class="space-y-1">
                   <div
                     v-for="f in contrat.factures.slice(0, 8)"
                     :key="f.id"
-                    class="flex items-center justify-between p-2 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                    class="flex items-center justify-between px-2 py-1.5 rounded hover:bg-zinc-50 cursor-pointer"
                     @click="goToFacture(f.id)"
                   >
                     <div>
-                      <div class="text-sm font-mono text-zinc-800">{{ f.numero || `Brouillon #${f.id}` }}</div>
-                      <div class="text-xs text-zinc-400">{{ frDate(f.dateEmission) }}</div>
+                      <div class="text-[13px] font-mono font-semibold text-zinc-700">{{ f.numero || `Brouillon #${f.id}` }}</div>
+                      <div class="text-[12px] text-zinc-400">{{ frDate(f.dateEmission) }}</div>
                     </div>
-                    <span class="text-sm font-medium text-zinc-700">{{ euro(f.totalHt) }}</span>
+                    <span class="text-[13px] font-medium text-zinc-700 tabular">{{ euro(f.totalHt) }}</span>
                   </div>
                 </div>
               </div>
@@ -512,31 +543,31 @@ export default {
           <!-- Interventions by month -->
           <div class="card p-5">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-sm font-semibold text-zinc-700">Interventions</h3>
-              <button v-if="contrat.statut !== 'resilie'" class="btn btn-secondary text-xs py-1 px-3" @click="openInterventionModal">
+              <h3 class="text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.04em]">Interventions</h3>
+              <button v-if="contrat.statut !== 'resilie'" class="btn-secondary btn-sm" @click="openInterventionModal">
                 <i data-lucide="plus" width="14" height="14"></i> Saisir
               </button>
             </div>
 
-            <div v-if="!interventionsByMonth.length" class="text-sm text-zinc-400 italic">Aucune intervention enregistrée</div>
+            <div v-if="!interventionsByMonth.length" class="text-[13px] text-zinc-400 italic">Aucune intervention enregistrée</div>
             <div v-else class="space-y-4">
               <div v-for="group in interventionsByMonth" :key="group.key">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{{ group.label }}</span>
-                  <span class="text-xs font-mono text-zinc-600">{{ group.total.toFixed(1) }} h
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] font-semibold text-zinc-500 uppercase tracking-[0.04em]">{{ group.label }}</span>
+                  <span class="text-[12px] font-mono text-zinc-600 tabular">{{ group.total.toFixed(1) }} h
                     <template v-if="Number(contrat.heuresIncluses) > 0">
                       / {{ contrat.heuresIncluses }} h incluses
                     </template>
                   </span>
                 </div>
-                <table class="w-full text-sm">
+                <table class="w-full text-[13px]">
                   <tbody>
-                    <tr v-for="i in group.items" :key="i.id" class="border-t border-zinc-100">
-                      <td class="py-2 font-mono text-zinc-500 w-28">{{ frDate(i.date) }}</td>
+                    <tr v-for="i in group.items" :key="i.id" class="border-t border-row">
+                      <td class="py-2 font-mono text-zinc-500 tabular w-28">{{ frDate(i.date) }}</td>
                       <td class="py-2 text-zinc-700">{{ i.description || '—' }}</td>
-                      <td class="py-2 font-mono text-right text-zinc-700 w-20">{{ i.dureeH.toFixed(1) }} h</td>
+                      <td class="py-2 font-mono text-right text-zinc-700 tabular w-20">{{ i.dureeH.toFixed(1) }} h</td>
                       <td class="py-2 w-8 text-right">
-                        <button class="text-zinc-300 hover:text-red-500 transition-colors" title="Supprimer l'intervention" @click="removeIntervention(i.id)">
+                        <button class="btn-icon ml-auto hover:text-error-fg" title="Supprimer l'intervention" @click="removeIntervention(i.id)">
                           <i data-lucide="trash-2" width="14" height="14"></i>
                         </button>
                       </td>
@@ -571,7 +602,7 @@ export default {
           <label class="field-label">Description</label>
           <textarea v-model="interventionForm.description" class="field-input" rows="3" placeholder="Détail de l'intervention…"></textarea>
         </div>
-        <div v-if="interventionError" class="text-sm text-red-600">{{ interventionError }}</div>
+        <div v-if="interventionError" class="text-[13px] text-error-fg">{{ interventionError }}</div>
         <div class="flex justify-end gap-3 pt-2">
           <button type="button" class="btn btn-secondary" @click="showInterventionModal = false">Annuler</button>
           <button type="submit" class="btn btn-primary" :disabled="interventionSaving">
@@ -584,7 +615,7 @@ export default {
     <!-- Generate invoice modal -->
     <BaseModal v-if="showGenererModal" title="Générer une facture mensuelle" @close="showGenererModal = false">
       <div class="space-y-4">
-        <p class="text-sm text-zinc-600">Choisissez la période pour laquelle générer le brouillon de facture. Un brouillon sera créé avec le montant forfaitaire et les heures supplémentaires éventuelles.</p>
+        <p class="text-[13px] text-zinc-600">Choisissez la période pour laquelle générer le brouillon de facture. Un brouillon sera créé avec le montant forfaitaire et les heures supplémentaires éventuelles.</p>
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="field-label">Mois</label>
@@ -601,16 +632,16 @@ export default {
         </div>
 
         <!-- Result -->
-        <div v-if="genererResult" class="p-4 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800 space-y-1">
+        <div v-if="genererResult" class="p-4 bg-green-50 border border-green-200 rounded text-[13px] text-green-800 space-y-1">
           <div class="font-semibold">{{ genererResult.message }}</div>
           <div>Heures utilisées : {{ genererResult.heuresUtilisees.toFixed(1) }} h
             <template v-if="genererResult.depassement > 0"> · Dépassement : {{ genererResult.depassement.toFixed(1) }} h</template>
           </div>
-          <button class="mt-2 btn btn-primary text-xs py-1 px-3" @click="goToFacture(genererResult.id); showGenererModal = false">
+          <button class="mt-2 btn-primary btn-sm" @click="goToFacture(genererResult.id); showGenererModal = false">
             Voir la facture
           </button>
         </div>
-        <div v-if="genererError" class="text-sm text-red-600">{{ genererError }}</div>
+        <div v-if="genererError" class="text-[13px] text-error-fg">{{ genererError }}</div>
         <div class="flex justify-end gap-3 pt-2">
           <button type="button" class="btn btn-secondary" @click="showGenererModal = false">Fermer</button>
           <button v-if="!genererResult" class="btn btn-primary" @click="genererFacture" :disabled="genererSaving">
@@ -623,7 +654,7 @@ export default {
     <!-- Resilier confirm -->
     <BaseModal v-if="showResilierConfirm" title="Résilier le contrat" @close="showResilierConfirm = false">
       <div class="space-y-4">
-        <p class="text-sm text-zinc-600">Cette action est irréversible. Le contrat sera marqué comme résilié avec la date d'aujourd'hui.</p>
+        <p class="text-[13px] text-zinc-600">Cette action est irréversible. Le contrat sera marqué comme résilié avec la date d'aujourd'hui.</p>
         <div class="flex justify-end gap-3">
           <button class="btn btn-secondary" @click="showResilierConfirm = false">Annuler</button>
           <button class="btn btn-secondary text-red-600" @click="changeStatut('resilier')" :disabled="saving">
@@ -631,6 +662,26 @@ export default {
           </button>
         </div>
       </div>
+    </BaseModal>
+
+    <!-- Upload signed PDF modal -->
+    <BaseModal v-if="showUploadSigneModal" title="Uploader le document signé" @close="closeUploadSigneModal">
+      <div class="space-y-4">
+        <p class="text-[13px] text-zinc-500">Uploadez le PDF signé par le client (scan ou export signé électroniquement). Ce fichier remplacera tout document signé précédent et sera envoyé sur le Drive.</p>
+        <p v-if="uploadSigneError" class="text-[13px] text-error-fg bg-error-bg p-3 rounded">{{ uploadSigneError }}</p>
+        <div>
+          <label class="field-label">Fichier PDF signé *</label>
+          <input type="file" accept=".pdf,application/pdf" class="field-input" @change="onUploadSigneFile" />
+        </div>
+        <p v-if="uploadSigneFile" class="text-[12px] text-zinc-500">{{ uploadSigneFile.name }} — {{ (uploadSigneFile.size / 1024).toFixed(0) }} Ko</p>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="closeUploadSigneModal">Annuler</button>
+        <button class="btn-primary" :disabled="!uploadSigneFile" @click="submitUploadSigne">
+          <i data-lucide="upload" width="14" height="14"></i>
+          Uploader
+        </button>
+      </template>
     </BaseModal>
 
   </div>

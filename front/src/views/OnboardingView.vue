@@ -1,8 +1,8 @@
 <script>
-// First-run onboarding wizard (PLAN.md §5.7.2). Seven steps:
+// First-run onboarding wizard (PLAN.md §5.7.2). Eight steps:
 //   1 Welcome · 2 Identité · 3 Coordonnées · 4 Bancaire · 5 Facturation
-//   6 Alertes · 7 Confirmation
-// Field steps (2..6) are driven by the settings catalogue returned by the API
+//   6 Alertes · 7 Maintenance & infogérance · 8 Confirmation
+// Field steps (2..7) are driven by the settings catalogue returned by the API
 // (grouped by onboarding step). Each step is saved before advancing so a reload
 // never loses data. The wizard is non-skippable until required fields are set.
 import { settingsApi } from '@/api'
@@ -15,7 +15,8 @@ const STEP_META = {
   4: { title: 'Coordonnées bancaires', subtitle: 'Utilisées pour le règlement de vos factures.' },
   5: { title: 'Préférences de facturation', subtitle: 'Valeurs par défaut et mentions légales.' },
   6: { title: 'Alertes', subtitle: 'Où recevoir les alertes système (Drive, sauvegardes).' },
-  7: { title: 'Confirmation', subtitle: "Tout est prêt — vérifiez et lancez l'application." },
+  7: { title: 'Maintenance & infogérance', subtitle: 'Conditions standard reprises dans vos contrats de maintenance.' },
+  8: { title: 'Confirmation', subtitle: "Tout est prêt — vérifiez et lancez l'application." },
 }
 
 export default {
@@ -66,7 +67,12 @@ export default {
   },
   methods: {
     isTextarea(cle) {
-      return cle === 'emetteur.penalites' || cle === 'emetteur.mention_tva'
+      return (
+        cle === 'emetteur.penalites' ||
+        cle === 'emetteur.mention_tva' ||
+        cle === 'emetteur.maint_detail_supervision' ||
+        cle === 'emetteur.maint_assurance_rcpro'
+      )
     },
     async saveCurrentStep() {
       const fields = this.currentFields

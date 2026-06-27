@@ -3,6 +3,7 @@ import { clientsApi } from '@/api'
 import PageHeader from '@/components/PageHeader.vue'
 import KpiBar from '@/components/KpiBar.vue'
 import BaseModal from '@/components/BaseModal.vue'
+import CreateDocMenu from '@/components/CreateDocMenu.vue'
 
 const euro = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 const dateF = (d) => d ? new Intl.DateTimeFormat('fr-FR').format(new Date(d)) : '—'
@@ -41,7 +42,7 @@ const STATUS_LABELS = {
 
 export default {
   name: 'ClientDetailView',
-  components: { PageHeader, KpiBar, BaseModal },
+  components: { PageHeader, KpiBar, BaseModal, CreateDocMenu },
   props: { id: { type: String, required: true } },
   data() {
     return {
@@ -143,10 +144,7 @@ export default {
           <i data-lucide="pencil" width="14" height="14"></i>
           Modifier
         </button>
-        <button class="btn-primary" @click="$router.push({ name: 'facture-new' })">
-          <i data-lucide="plus" width="14" height="14"></i>
-          Nouveau document
-        </button>
+        <CreateDocMenu :client-id="client.id" />
       </PageHeader>
 
       <KpiBar :items="kpis" />

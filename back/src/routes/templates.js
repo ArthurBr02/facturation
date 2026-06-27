@@ -16,6 +16,19 @@ import { renderHtmlToPdf } from '../services/pdf.service.js';
 
 const router = Router();
 
+// Fold a label to an ASCII, header-safe filename: decompose accents, drop
+// combining marks, replace any remaining non-ASCII (em dash, quotes…) with '-'.
+function asciiFilename(name) {
+  return String(name ?? '')
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^\x20-\x7e]/g, '-')
+    .replace(/["\\]/g, '')
+    .replace(/[-\s]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .trim();
+}
+
 const lineSchema = z.object({
   designationTemplate: z.string(),
   quantiteTemplate: z.coerce.number().default(0),
@@ -216,7 +229,10 @@ router.get(
     const pdf = await renderHtmlToPdf(html);
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="preview-${template.nom}.pdf"`);
+    // HTTP headers must be latin1: ASCII-fold the template name (accents, dashes…)
+    // before using it as a filename, otherwise setHeader throws ERR_INVALID_CHAR.
+    const safeName = asciiFilename(template.nom) || `preview-${template.type}`;
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}.pdf"`);
     res.send(pdf);
   }),
 );

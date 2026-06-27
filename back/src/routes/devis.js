@@ -14,6 +14,7 @@ import { renderHtmlToPdf } from '../services/pdf.service.js';
 import { renderDevisHtml } from '../templates/devisHtml.js';
 import { getCustomHtmlForType, renderCustomDocument } from '../services/customTemplate.service.js';
 import { enqueueUpload } from '../services/uploadQueue.service.js';
+import { storeSignedPdf } from '../services/signedPdf.service.js';
 import { getEmetteurDict } from '../services/facture.service.js';
 import env from '../config/env.js';
 import path from 'node:path';
@@ -421,14 +422,10 @@ router.post(
     const { data } = req.body;
     if (!data) throw ApiError.badRequest('Champ data (base64) requis');
 
-    const buf = Buffer.from(data, 'base64');
-    const dir = path.join(env.storage.root, 'signes', 'devis');
-    fs.mkdirSync(dir, { recursive: true });
-    const filename = `${devis.numero || `devis-${id}`}-signe.pdf`;
-    const filePath = path.join(dir, filename);
-    fs.writeFileSync(filePath, buf);
-    logger.info(`[devis] signed PDF stored ${filePath} (${buf.length} bytes)`);
-
+    const filePath = await storeSignedPdf({
+      type: 'devis', folder: 'devis', numero: devis.numero, fallbackName: `devis-${id}`,
+      documentId: id, base64: data, date: devis.dateEmission,
+    });
     await prisma.devis.update({ where: { id }, data: { signedPdfPath: filePath } });
     const fresh = await prisma.devis.findUnique({ where: { id }, include: FULL_INCLUDE });
     res.json(serializeDevis(fresh));

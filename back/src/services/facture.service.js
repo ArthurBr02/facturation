@@ -178,6 +178,7 @@ export function serializeFacture(f) {
     reste: Math.max(totalHt - paye, 0),
     verrouillee: f.verrouillee,
     hasPdf: Boolean(f.pdfPath),
+    hasSignedPdf: Boolean(f.signedPdfPath),
     finaliseeAt: f.finaliseeAt,
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,

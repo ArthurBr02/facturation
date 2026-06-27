@@ -118,6 +118,7 @@ export default {
       await this.load()
     } else {
       this.form.lignes = [emptyLine(this.defaultTjm)]
+      if (this.$route.query.clientId) this.form.clientId = Number(this.$route.query.clientId)
       this.loading = false
     }
   },
@@ -589,7 +590,7 @@ export default {
     <!-- Upload signé modal -->
     <BaseModal v-if="showUploadSigneModal" title="Uploader le document signé" @close="closeUploadSigneModal">
       <div class="space-y-4">
-        <p class="text-[13px] text-zinc-500">Uploadez le PDF signé par le client (scan ou export signé électroniquement). Ce fichier remplacera tout document signé précédent.</p>
+        <p class="text-[13px] text-zinc-500">Uploadez le PDF signé par le client (scan ou export signé électroniquement). Ce fichier remplacera tout document signé précédent et sera envoyé sur le Drive.</p>
         <p v-if="uploadSigneError" class="text-[13px] text-error-fg bg-error-bg p-3 rounded">{{ uploadSigneError }}</p>
         <div>
           <label class="field-label">Fichier PDF signé *</label>

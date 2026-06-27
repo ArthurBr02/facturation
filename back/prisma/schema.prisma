@@ -370,7 +370,8 @@ model Facture {
   verrouillee Boolean @default(false)
 
   snapshot    Json?
-  pdfPath     String?   @map("pdf_path")
+  pdfPath       String?   @map("pdf_path")
+  signedPdfPath String?   @map("signed_pdf_path")
   finaliseeAt DateTime? @map("finalisee_at")
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -449,6 +450,7 @@ model ContratMaintenance {
   exclusions       String?       @db.Text
   snapshot         Json?
   pdfPath          String?       @map("pdf_path")
+  signedPdfPath    String?       @map("signed_pdf_path")
   dateResiliation  DateTime?     @map("date_resiliation") @db.Date
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")

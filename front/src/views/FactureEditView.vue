@@ -7,6 +7,7 @@ import { openPdfTab } from '@/utils/pdf'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import ProductPicker from '@/components/ProductPicker.vue'
+import BaseModal from '@/components/BaseModal.vue'
 
 const euro = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
 
@@ -30,7 +31,7 @@ const STATUT_META = {
 
 export default {
   name: 'FactureEditView',
-  components: { PageHeader, StatusDot, ProductPicker },
+  components: { PageHeader, StatusDot, ProductPicker, BaseModal },
   props: {
     id: { type: [String, Number], default: null },
   },
@@ -64,6 +65,10 @@ export default {
       encForm: { dateEncaissement: toDateInput(new Date()), montant: null, moyen: 'virement', reference: '' },
       relatedOrigine: null,
       relatedAvoirs: [],
+      hasSignedPdf: false,
+      showUploadSigneModal: false,
+      uploadSigneFile: null,
+      uploadSigneError: '',
     }
   },
   watch: {
@@ -96,6 +101,7 @@ export default {
       await this.load()
     } else {
       this.form.lignes = [emptyLine(this.defaultTjm)]
+      if (this.$route.query.clientId) this.form.clientId = Number(this.$route.query.clientId)
       this.loading = false
     }
   },
@@ -139,6 +145,7 @@ export default {
         this.encForm.montant = f.reste || null
         this.relatedOrigine = f.factureOrigine || null
         this.relatedAvoirs = f.avoirs || []
+        this.hasSignedPdf = f.hasSignedPdf || false
       } finally {
         this.loading = false
       }
@@ -229,6 +236,32 @@ export default {
       } catch {
         this.error = 'Aperçu PDF indisponible'
       }
+    },
+    openUploadSigneModal() { this.uploadSigneFile = null; this.uploadSigneError = ''; this.showUploadSigneModal = true },
+    closeUploadSigneModal() { this.showUploadSigneModal = false },
+    onUploadSigneFile(e) { this.uploadSigneFile = e.target.files[0] || null },
+    async submitUploadSigne() {
+      if (!this.uploadSigneFile) { this.uploadSigneError = 'Sélectionnez un fichier PDF.'; return }
+      this.uploadSigneError = ''
+      const reader = new FileReader()
+      reader.onload = async (ev) => {
+        const base64 = ev.target.result.split(',')[1]
+        try {
+          await facturesApi.uploadSigne(this.id, base64)
+          this.showUploadSigneModal = false
+          await this.load(this.id)
+        } catch (e) {
+          this.uploadSigneError = e.response?.data?.error || 'Upload impossible'
+        }
+      }
+      reader.readAsDataURL(this.uploadSigneFile)
+    },
+    async viewSignedPdf() {
+      const showPdf = openPdfTab()
+      try {
+        const blob = await facturesApi.pdfSigne(this.id)
+        showPdf(blob)
+      } catch { this.error = 'PDF signé indisponible' }
     },
     moyenLabel(m) {
       return MOYEN_LABEL[m] || m
@@ -350,6 +383,14 @@ export default {
         <button v-if="form.type !== 'avoir'" class="btn-secondary btn-sm" title="Créer un avoir" :disabled="saving" @click="createAvoir">
           <i data-lucide="receipt" width="14" height="14"></i>
           Avoir
+        </button>
+        <button v-if="hasSignedPdf" class="btn-secondary btn-sm text-green-700 border-green-300 hover:bg-green-50" title="Voir le document signé" @click="viewSignedPdf">
+          <i data-lucide="file-check" width="14" height="14"></i>
+          Signé
+        </button>
+        <button class="btn-secondary btn-sm" :title="hasSignedPdf ? 'Remplacer le document signé' : 'Uploader le document signé'" :disabled="saving" @click="openUploadSigneModal">
+          <i data-lucide="upload" width="14" height="14"></i>
+          {{ hasSignedPdf ? 'Remplacer signé' : 'Uploader signé' }}
         </button>
       </template>
     </PageHeader>
@@ -592,5 +633,25 @@ export default {
         </div>
       </div>
     </div>
+
+    <!-- Upload signed PDF modal -->
+    <BaseModal v-if="showUploadSigneModal" title="Uploader le document signé" @close="closeUploadSigneModal">
+      <div class="space-y-4">
+        <p class="text-[13px] text-zinc-500">Uploadez le PDF signé par le client (scan ou export signé électroniquement). Ce fichier remplacera tout document signé précédent et sera envoyé sur le Drive.</p>
+        <p v-if="uploadSigneError" class="text-[13px] text-error-fg bg-error-bg p-3 rounded">{{ uploadSigneError }}</p>
+        <div>
+          <label class="field-label">Fichier PDF signé *</label>
+          <input type="file" accept=".pdf,application/pdf" class="field-input" @change="onUploadSigneFile" />
+        </div>
+        <p v-if="uploadSigneFile" class="text-[12px] text-zinc-500">{{ uploadSigneFile.name }} — {{ (uploadSigneFile.size / 1024).toFixed(0) }} Ko</p>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="closeUploadSigneModal">Annuler</button>
+        <button class="btn-primary" :disabled="!uploadSigneFile" @click="submitUploadSigne">
+          <i data-lucide="upload" width="14" height="14"></i>
+          Uploader
+        </button>
+      </template>
+    </BaseModal>
   </div>
 </template>

@@ -16,6 +16,7 @@ import { renderHtmlToPdf } from '../services/pdf.service.js';
 import { renderContratHtml } from '../templates/contratHtml.js';
 import { getCustomHtmlForType, renderCustomDocument } from '../services/customTemplate.service.js';
 import { enqueueUpload } from '../services/uploadQueue.service.js';
+import { storeSignedPdf } from '../services/signedPdf.service.js';
 import { getEmetteurDict } from '../services/facture.service.js';
 import env from '../config/env.js';
 
@@ -98,6 +99,7 @@ function serializeContrat(c) {
     exclusions: c.exclusions,
     dateResiliation: c.dateResiliation,
     hasPdf: Boolean(c.pdfPath),
+    hasSignedPdf: Boolean(c.signedPdfPath),
     heuresMoisCourant: heuresMonth,
     depassementMoisCourant: Math.max(0, heuresMonth - Number(c.heuresIncluses)),
     interventions: (c.interventions || []).map((i) => ({
@@ -139,6 +141,40 @@ function buildContratSnapshot(contrat, em) {
       bic: em.bic,
     },
     mentions: { tva: em.mention_tva, penalites: em.penalites },
+    // Standard maintenance terms, frozen from emetteur.maint_* settings so the
+    // contract PDF stays reproducible even if the settings change later.
+    maintenance: {
+      tauxHoraire: em.maint_taux_horaire,
+      trancheFacturation: em.maint_tranche_facturation,
+      tjm: em.maint_tjm,
+      plageHoraire: em.maint_plage_horaire,
+      delaiCritique: em.maint_delai_critique,
+      delaiMajeur: em.maint_delai_majeur,
+      delaiMineur: em.maint_delai_mineur,
+      canalSignalement: em.maint_canal_signalement,
+      frequenceReporting: em.maint_frequence_reporting,
+      detailSupervision: em.maint_detail_supervision,
+      frequenceSauvegarde: em.maint_frequence_sauvegarde,
+      localisationSauvegarde: em.maint_localisation_sauvegarde,
+      retentionSauvegarde: em.maint_retention_sauvegarde,
+      delaiPaiement: em.delai_paiement,
+      moyenPaiement: em.maint_moyen_paiement,
+      modaliteEmission: em.maint_modalite_emission,
+      preavisRevision: em.maint_preavis_revision,
+      delaiSuspension: em.maint_delai_suspension,
+      dureeConfidentialite: em.maint_duree_confidentialite,
+      periodeReconduction: em.maint_periode_reconduction,
+      preavisResiliation: em.maint_preavis_resiliation,
+      delaiRemede: em.maint_delai_remede,
+      plafondResponsabiliteMois: em.maint_plafond_responsabilite_mois,
+      assuranceRcpro: em.maint_assurance_rcpro,
+      assureur: em.maint_assureur,
+      dureeReversibilite: em.maint_duree_reversibilite,
+      heuresReversibilite: em.maint_heures_reversibilite,
+      dureeForceMajeure: em.maint_duree_force_majeure,
+      tribunal: em.maint_tribunal,
+      lieuSignature: em.maint_lieu_signature,
+    },
     client: {
       nom: cl.nom,
       denomination: cl.denomination,
@@ -149,6 +185,9 @@ function buildContratSnapshot(contrat, em) {
       ville: cl.ville,
       pays: cl.pays,
       siren: cl.siren,
+      email: cl.email,
+      telephone: cl.telephone,
+      contactPrincipal: cl.contactPrincipal,
     },
     contrat: {
       numero: contrat.numero,
@@ -363,6 +402,43 @@ router.get(
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${contrat.numero}.pdf"`);
     res.send(pdf);
+  }),
+);
+
+// POST /api/contrats/:id/upload-signe — store the client-signed PDF (base64 JSON body)
+router.post(
+  '/:id/upload-signe',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const contrat = await prisma.contratMaintenance.findUnique({ where: { id } });
+    if (!contrat) throw ApiError.notFound('Contrat introuvable');
+    const { data } = req.body;
+    if (!data) throw ApiError.badRequest('Champ data (base64) requis');
+
+    const filePath = await storeSignedPdf({
+      type: 'contrat', folder: 'contrats', numero: contrat.numero, fallbackName: `contrat-${id}`,
+      documentId: id, base64: data, date: contrat.dateDebut,
+    });
+    await prisma.contratMaintenance.update({ where: { id }, data: { signedPdfPath: filePath } });
+    const fresh = await prisma.contratMaintenance.findUnique({ where: { id }, include: FULL_INCLUDE });
+    res.json(serializeContrat(fresh));
+  }),
+);
+
+// GET /api/contrats/:id/pdf-signe — serve the signed PDF
+router.get(
+  '/:id/pdf-signe',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const contrat = await prisma.contratMaintenance.findUnique({ where: { id } });
+    if (!contrat) throw ApiError.notFound('Contrat introuvable');
+    if (!contrat.signedPdfPath || !fs.existsSync(contrat.signedPdfPath)) {
+      throw ApiError.notFound('Aucun document signé disponible');
+    }
+    const name = `${contrat.numero || `contrat-${id}`}-signe.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${name}"`);
+    res.send(fs.readFileSync(contrat.signedPdfPath));
   }),
 );
 

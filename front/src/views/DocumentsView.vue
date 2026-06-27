@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import KpiBar from '@/components/KpiBar.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import BaseModal from '@/components/BaseModal.vue'
+import CreateDocMenu from '@/components/CreateDocMenu.vue'
 
 const euro = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
 
@@ -48,7 +49,7 @@ const TABS = [
 
 export default {
   name: 'DocumentsView',
-  components: { PageHeader, KpiBar, StatusDot, BaseModal },
+  components: { PageHeader, KpiBar, StatusDot, BaseModal, CreateDocMenu },
   data() {
     return {
       tabs: TABS,
@@ -204,17 +205,7 @@ export default {
 <template>
   <div class="flex flex-col h-full overflow-hidden">
     <PageHeader title="Documents" :subtitle="headerSubtitle">
-      <template #actions>
-        <button v-if="tab === 'devis'" class="btn btn-primary" @click="$router.push({ name: 'devis-new' })">
-          <i data-lucide="plus" width="15" height="15"></i> Nouveau devis
-        </button>
-        <button v-else-if="tab === 'factures'" class="btn btn-primary" @click="$router.push({ name: 'facture-new' })">
-          <i data-lucide="plus" width="15" height="15"></i> Nouvelle facture
-        </button>
-        <button v-else-if="tab === 'contrats'" class="btn btn-primary" @click="$router.push({ name: 'contrat-new' })">
-          <i data-lucide="plus" width="15" height="15"></i> Nouveau contrat
-        </button>
-      </template>
+      <CreateDocMenu />
     </PageHeader>
 
     <!-- KPI bar -->
@@ -454,7 +445,7 @@ export default {
     <!-- Avenant upload signé modal -->
     <BaseModal v-if="showAvenantUploadModal" title="Uploader l'avenant signé" @close="showAvenantUploadModal = false">
       <div class="space-y-4">
-        <p class="text-[13px] text-zinc-500">Uploadez le PDF signé par le client pour l'avenant <strong>{{ selectedAvenant?.numero }}</strong>.</p>
+        <p class="text-[13px] text-zinc-500">Uploadez le PDF signé par le client pour l'avenant <strong>{{ selectedAvenant?.numero }}</strong>. Le fichier sera envoyé sur le Drive.</p>
         <p v-if="avenantUploadError" class="text-[13px] text-error-fg bg-error-bg p-3 rounded">{{ avenantUploadError }}</p>
         <div>
           <label class="field-label">Fichier PDF signé *</label>

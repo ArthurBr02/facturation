@@ -15,6 +15,7 @@ import { allocateNumber } from '../services/numbering.service.js';
 import { renderHtmlToPdf } from '../services/pdf.service.js';
 import { renderFactureHtml } from '../templates/factureHtml.js';
 import { getCustomHtmlForType, renderCustomDocument } from '../services/customTemplate.service.js';
+import { storeSignedPdf } from '../services/signedPdf.service.js';
 import {
   serializeFacture,
   paidAmount,
@@ -276,6 +277,46 @@ router.get(
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${name}"`);
     res.send(pdf);
+  }),
+);
+
+// POST /api/factures/:id/upload-signe — store the client-signed PDF (base64 JSON body)
+router.post(
+  '/:id/upload-signe',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const facture = await prisma.facture.findUnique({ where: { id } });
+    if (!facture) throw ApiError.notFound('Facture introuvable');
+    if (!facture.verrouillee) throw ApiError.badRequest('La facture doit être finalisée pour uploader le signé');
+    const { data } = req.body;
+    if (!data) throw ApiError.badRequest('Champ data (base64) requis');
+
+    const filePath = await storeSignedPdf({
+      type: facture.type === 'avoir' ? 'avoir' : 'facture',
+      folder: facture.type === 'avoir' ? 'avoirs' : 'factures',
+      numero: facture.numero, fallbackName: `facture-${id}`,
+      documentId: id, base64: data, date: facture.dateEmission,
+    });
+    await prisma.facture.update({ where: { id }, data: { signedPdfPath: filePath } });
+    const fresh = await prisma.facture.findUnique({ where: { id }, include: FULL_INCLUDE });
+    res.json(serializeFacture(fresh));
+  }),
+);
+
+// GET /api/factures/:id/pdf-signe — serve the signed PDF
+router.get(
+  '/:id/pdf-signe',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const facture = await prisma.facture.findUnique({ where: { id } });
+    if (!facture) throw ApiError.notFound('Facture introuvable');
+    if (!facture.signedPdfPath || !fs.existsSync(facture.signedPdfPath)) {
+      throw ApiError.notFound('Aucun document signé disponible');
+    }
+    const name = `${facture.numero || `facture-${id}`}-signe.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${name}"`);
+    res.send(fs.readFileSync(facture.signedPdfPath));
   }),
 );
 

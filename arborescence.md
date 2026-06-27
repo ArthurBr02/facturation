@@ -42,6 +42,7 @@ back/
     │   ├── numbering.service.js    # allocateNumber(tx, serie, annee), peekNextNumber
     │   ├── pdf.service.js          # renderHtmlToPdf, renderToTempFile (Puppeteer)
     │   ├── uploadQueue.service.js  # enqueueUpload → upload_queue + Drive immédiat
+    │   ├── signedPdf.service.js    # storeSignedPdf → stocke le PDF signé + enqueue Drive (tous types)
     │   ├── placeholder.service.js  # buildPlaceholderMap, resolve(text, map)
     │   ├── customTemplate.service.js # Phase 6: buildDocumentMap, renderCustomDocument, getDefaultHtml, getCustomHtmlForType
     │   ├── drive.service.js        # Google Drive API (désactivable: DRIVE_ENABLED)
@@ -79,12 +80,13 @@ front/src/
 │   └── AppShell.vue                # Layout principal: SideNav + TopBar + <router-view>
 ├── components/
 │   ├── BaseModal.vue               # Modale réutilisable
+│   ├── CreateDocMenu.vue           # Dropdown « Nouveau document » (devis/facture/contrat, clientId optionnel)
 │   ├── ProductPicker.vue           # Bouton + dropdown recherche catalogue produits [Sprint 3.4]
 │   ├── SideNav.vue                 # Sidebar navigation
 │   └── TopBar.vue                  # Barre du haut
 └── views/
     ├── LoginView.vue               # Authentification
-    ├── OnboardingView.vue          # Assistant 7 étapes (1re connexion)
+    ├── OnboardingView.vue          # Assistant 8 étapes (1re connexion, incl. Maintenance)
     ├── DashboardView.vue           # Tableau de bord + actions urgentes + seuils TVA [Phase 3.5.1]
     ├── ClientsView.vue             # Liste clients + modale création/édition
     ├── ClientDetailView.vue        # Vue client 360° : documents + synthèse [Phase 3.5.3]

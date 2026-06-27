@@ -26,6 +26,7 @@ export default {
     </div>
     <div class="flex items-center gap-2 flex-shrink-0">
       <slot />
+      <slot name="actions" />
     </div>
   </header>
 </template>
