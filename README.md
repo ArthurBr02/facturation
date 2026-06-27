@@ -258,16 +258,3 @@ Vous pouvez également déclencher manuellement une sauvegarde via l'interface d
 POST /api/admin/backup
 ```
 Le backup effectue un `pg_dump`, génère un fichier compressé `.sql.gz` dans le volume local `/app/storage/backups` et le téléverse sur Google Drive (si activé).
-
----
-
-## 📌 État du projet & Évolutions futures
-L'application est activement développée en suivant le plan directeur (`plans/PLAN.md`).
-
-* **Phase 0** : Socle infrastructure, base de données et services transverses (PDF, Drive, Mail). ➔ ✅ *Terminé*
-* **Phase 1** : Gestion des factures, avoirs et encaissements. ➔ ✅ *Terminé*
-* **Phase 2** : Gestion des devis, des avenants et édition enrichie. ➔ ✅ *Terminé*
-* **Phase 3** : Gestion des contrats de maintenance et facturation mensuelle récurrente. ➔ ✅ *Terminé*
-* **Phase 3.5** : Dashboard intelligent, fiche client 360° et relances directes. ➔ ✅ *Terminé*
-* **Phase 4** : Pilotage comptable avancé (projections CA, génération du livre des recettes, déclarations URSSAF). ➔ ⬜ *À faire*
-* **Phase 5** : Conformité 2026/2027 (Format Factur-X pour la facturation électronique obligatoire). ➔ ⬜ *À faire*
